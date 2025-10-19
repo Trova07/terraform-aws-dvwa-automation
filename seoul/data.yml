@@ -1,0 +1,460 @@
+region: "ap-northeast-2"
+region_name: "seoul"
+
+# aws vpc에서 사용할 가용 영역 수
+number_of_azs: 2
+
+# aws vpc 네트워크 구성 정보
+network:
+  cidr_block: "10.2.0.0/16"
+  subnet_bits: 8
+  number_of_public_subnets: 2
+  number_of_private_subnets: 2
+  number_of_nat_gws: 1
+
+sg_list:
+  elk:
+    ingress_rules:
+      elastic1:
+        protocol: "tcp"
+        from_port: 9200
+        to_port: 9200
+        cidr_blocks: ["0.0.0.0/0"]
+
+      elastic2: 
+        protocol: "tcp"
+        from_port: 9300
+        to_port: 9300
+        cidr_blocks: ["0.0.0.0/0"]
+
+      kibana:
+        protocol: "tcp"
+        from_port: 5601
+        to_port: 5601
+        cidr_blocks: ["0.0.0.0/0"]
+    egress_rules: {}
+
+  web:
+    ingress_rules:
+      http:
+        protocol: "tcp"
+        from_port: 80
+        to_port: 80
+        cidr_blocks: ["0.0.0.0/0"]
+      https:
+        protocol: tcp
+        from_port: 443
+        to_port: 443
+        cidr_blocks: ["0.0.0.0/0"]
+    egress_rules: {}
+  db:
+    ingress_rules:
+      mariadb:
+        protocol: tcp
+        from_port: 3306
+        to_port: 3306
+        cidr_blocks: ["0.0.0.0/0"]
+    egress_rules: {}
+  dns:
+    ingress_rules:
+      tcp:
+        protocol: tcp
+        from_port: 53
+        to_port: 53
+        cidr_blocks: ["0.0.0.0/0"]
+      udp:
+        protocol: udp
+        from_port: 53
+        to_port: 53
+        cidr_blocks: ["0.0.0.0/0"]
+    egress_rules: {}
+  remote:
+    ingress_rules:
+      ssh:
+        protocol: "tcp"
+        from_port: 22
+        to_port: 22
+        cidr_blocks: ["0.0.0.0/0"]
+
+      telnet:
+        protocol: "tcp"
+        from_port: 23
+        to_port: 23
+        cidr_blocks: ["0.0.0.0/0"]
+
+      rdp:
+        protocol: "tcp"
+        from_port: 3389
+        to_port: 3389
+        cidr_blocks: ["0.0.0.0/0"]
+
+      vnc:
+        protocol: "tcp"
+        from_port: 5900
+        to_port: 5900
+        cidr_blocks: ["0.0.0.0/0"]
+    egress_rules: {}
+
+  default_out:
+    ingress_rules: {}
+    egress_rules:
+      all_outbound:
+        protocol: "-1"
+        from_port: 0
+        to_port: 0
+        cidr_blocks: ["0.0.0.0/0"]
+
+  icmp :
+    ingress_rules:
+      echo :
+        protocol: "icmp"
+        from_port: 8
+        to_port: 0
+        cidr_blocks: ["0.0.0.0/0"]
+    egress_rules: {}
+
+  ids:
+    ingress_rules:
+      all_outbound:
+        protocol: "-1"
+        from_port: 0
+        to_port: 0
+        cidr_blocks: ["0.0.0.0/0"]
+
+    egress_rules:
+      all_outbound:
+        protocol: "-1"
+        from_port: 0
+        to_port: 0
+        cidr_blocks: ["0.0.0.0/0"]
+
+
+rds_subnet_group:
+  name : "mysql-subnet-group"
+  description : "db_subnet group for mysql-cluster"
+
+db_instance :
+  engine              : "mariadb"
+  engine_version      : "11.4.5"
+  identifier          : "mariadb-ec2"
+  snapshot_identifier : "gnu-dvwa-snapshot-2025-07-01"
+  username            : "root"
+  password            : "Passw0rd"
+  instance_class      : "db.t4g.micro"
+  storage_type        : "gp3"
+  allocated_storage   : 20
+  multi_az            : false
+  publicly_accessible : false
+  sg_names            : ["db"]
+  latest_snapshot     : true
+  source_db_identifer : "wordpress-setup"
+
+autoscaling_group : 
+  gnuboard:
+    name                      : "gnuboard"
+    desired_capacity          : 2
+    min_size                  : 2
+    max_size                  : 4
+    health_check_type         : "ELB"
+    health_check_grace_period : 120
+  dvwa-filebeat:
+     name                      : "dvwa-filebeat"
+     desired_capacity          : 2
+     min_size                  : 2
+     max_size                  : 4
+     health_check_type         : "ELB"
+     health_check_grace_period : 120
+  elasticsearch1:
+    name                      : "elasticsearch_node-1"
+    desired_capacity          : 1
+    min_size                  : 1 
+    max_size                  : 1
+    health_check_type         : "ELB"
+    health_check_grace_period : 120
+  elasticsearch2: 
+    name                      : "elasticsearch_node-2"
+    desired_capacity          : 1
+    min_size                  : 1
+    max_size                  : 1
+    health_check_type         : "ELB"
+    health_check_grace_period : 120
+
+autoscaling_policy : 
+  name                      : "Target Tracking Policy"
+  policy_type               : "TargetTrackingScaling"
+  predefined_metric_type    : "ASGAverageCPUUtilization"
+  target_value              : 30
+  estimated_instance_warmup : 120
+
+key_info :
+  algorithm : "ED25519"
+  rsa_bits : 0
+
+ec2_instances : 
+  web : 
+    count         : 0
+    ami_id        : "ami-0e967ff96936c0c0c"
+    instance_type : "t2.micro"
+    sg_names      : ["default_out", "icmp", "remote", "web"]
+    public        : true
+  
+  db : 
+    count         : 0
+    ami_id        : "ami-0e967ff96936c0c0c"
+    instance_type : "t2.micro"
+    sg_names      : ["default_out", "icmp", "remote", "db"]
+    public        : false
+  
+  dns : 
+    count         : 0
+    ami_id        : "ami-0e967ff96936c0c0c"
+    instance_type : "t2.micro"
+    sg_names      : ["default_out", "icmp", "remote", "dns"]
+    public        : true
+
+launch_template:
+  gnuboard:
+    name_prefix            : "gnuboard"
+    description            : "gnuboard template"
+    image_id               : "ami-01beea3b5824c256a"
+    instance_type          : "t3.micro"
+    key_name               : "seoul-ed25519-key"
+    sg_names               : ["default_out", "web","remote", "icmp"]
+    user_data              : |
+      #!/bin/bash
+
+      hostnamectl hostname gnu.f1.it-edu.org
+
+      systemctl start httpd
+      systemctl enable httpd
+
+      HOSTED_ZONE_ID="Z032662211JM2TEXY5ZXL"
+      RECORD_NAME="gnu.f1.it-edu.org."
+      TTL=60
+
+      TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 3600")
+      INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+      PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+      PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+
+      cat > /tmp/route53-record.json <<EOF
+      {
+        "Comment": "Create A record for EC2 instance",
+        "Changes": [
+          {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+              "Name": "$RECORD_NAME",
+              "Type": "A",
+              "TTL": $TTL,
+              "ResourceRecords": [
+                {
+                  "Value": "$PUBLIC_IP"
+                }
+              ]
+            }
+          }
+        ]
+      }
+      EOF
+      aws route53 change-resource-record-sets  --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch file:///tmp/route53-record.json
+
+      systemctl restart filebeat
+      /usr/bin/python /root/access_log_generator.py &
+
+    network_interfaces : 
+      associate_public_ip_address : true
+      delete_on_termination       : true
+
+  dvwa-filebeat:
+    name_prefix            : "dvwa-filebeat"
+    description            : "dvwa-filebeat template"
+    image_id               : "ami-07f7f3cd9e3629027"
+    instance_type          : "t3.micro"
+    key_name               : "seoul-ed25519-key"
+    sg_names               : ["default_out", "web","remote", "icmp"]
+    user_data              : |
+      #!/bin/bash
+
+      hostnamectl hostname dvwa.f1.it-edu.org
+
+      systemctl start httpd
+      systemctl enable httpd
+      
+      HOSTED_ZONE_ID="Z032662211JM2TEXY5ZXL"
+      RECORD_NAME="dvwa.f1.it-edu.org."
+      TTL=60
+
+      TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 3600")
+      INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+      PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+      PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+
+      cat > /tmp/route53-record.json <<EOF
+      {
+        "Comment": "Create A record for EC2 instance",
+        "Changes": [
+          {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+              "Name": "$RECORD_NAME",
+              "Type": "A",
+              "TTL": $TTL,
+              "ResourceRecords": [
+                {
+                  "Value": "$PUBLIC_IP"
+                }
+              ]
+            }
+          }
+        ]
+      }
+      EOF
+      aws route53 change-resource-record-sets  --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch file:///tmp/route53-record.json
+
+      systemctl restart filebeat
+      /usr/bin/python /root/filebeat/access_log_generator.py &
+
+    network_interfaces : 
+      associate_public_ip_address : true
+      delete_on_termination       : true
+  
+  elasticsearch1:
+    name_prefix            : "elasticsearch_node-1"
+    description            : "elasticsearch_node-1"
+    image_id               : "ami-066919b33cadaed06"
+    instance_type          : "t2.small"
+    key_name               : "seoul-ed25519-key"
+    sg_names               : ["default_out", "web","remote", "icmp", "elk"]
+    user_data              : |
+      #!/bin/bash
+
+      HOSTED_ZONE_ID="Z032662211JM2TEXY5ZXL"
+      RECORD_NAME="node1.f1.it-edu.org."
+      TTL=60
+      
+      hostnamectl hostname node1.f1.it-edu.org
+      
+      TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 3600")
+      INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+      PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+      PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+      
+      VOLUME_ID="vol-0b7f4319d298cb11f" 
+      aws ec2 attach-volume --volume-id $VOLUME_ID --instance-id $INSTANCE_ID --device /dev/xvdbc --region ap-northeast-2
+      sleep 30
+      mount /dev/xvdbc1 /var/lib/elasticsearch
+      
+      sed -Ei "s/^network[.]host[:]\s+[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$/network.host: $PRIVATE_IP/i" /etc/elasticsearch/elasticsearch.yml
+      
+      cat > /tmp/route53-record.json <<EOF
+      {
+        "Comment": "Create A record for EC2 instance",
+        "Changes": [
+          {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+              "Name": "$RECORD_NAME",
+              "Type": "A",
+              "TTL": $TTL,
+              "ResourceRecords": [
+                {
+                  "Value": "$PRIVATE_IP"
+                }
+              ]
+            }
+          }
+        ]
+      }
+      EOF
+      
+      aws route53 change-resource-record-sets  --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch file:///tmp/route53-record.json
+      sleep 30 
+      systemctl start elasticsearch
+    network_interfaces : 
+      associate_public_ip_address : true
+      delete_on_termination       : true
+
+
+  elasticsearch2:
+    name_prefix            : "elasticsearch_node-2"
+    description            : "elasticsearch_node-2"
+    image_id               : "ami-0e616eeb0e3a351d3"
+    instance_type          : "t2.small"
+    key_name               : "seoul-ed25519-key"
+    sg_names               : ["default_out", "web","remote", "icmp", "elk"]
+    user_data              : |
+      #!/bin/bash
+
+      HOSTED_ZONE_ID="Z032662211JM2TEXY5ZXL"
+      RECORD_NAME="node2.f1.it-edu.org."
+      TTL=60
+      
+      hostnamectl hostname node2.f1.it-edu.org
+      
+      TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 3600")
+      INSTANCE_ID=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+      PRIVATE_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+      PUBLIC_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+      
+      VOLUME_ID="vol-0a17d8709cb3c1b46"
+      aws ec2 attach-volume --volume-id $VOLUME_ID --instance-id $INSTANCE_ID --device /dev/xvdbb --region ap-northeast-2
+      sleep 30
+      mount /dev/xvdbb1 /var/lib/elasticsearch
+      
+      sed -Ei "s/^network[.]host[:]\s+[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$/network.host: $PRIVATE_IP/i" /etc/elasticsearch/elasticsearch.yml
+      
+      cat > /tmp/route53-record.json <<EOF
+      {
+        "Comment": "Create A record for EC2 instance",
+        "Changes": [
+          {
+            "Action": "UPSERT",
+            "ResourceRecordSet": {
+              "Name": "$RECORD_NAME",
+              "Type": "A",
+              "TTL": $TTL,
+              "ResourceRecords": [
+                {
+                  "Value": "$PRIVATE_IP"
+                }
+              ]
+            }
+          }
+        ]
+      }
+      EOF
+      
+      aws route53 change-resource-record-sets  --hosted-zone-id "$HOSTED_ZONE_ID" --change-batch file:///tmp/route53-record.json
+      sleep 30
+      systemctl start elasticsearch
+    network_interfaces : 
+      associate_public_ip_address : true
+      delete_on_termination       : true
+
+mirror_traffic_filter:
+  ingress_rules:
+    icmp:
+      rule_action : "accept"
+      rule_number : 100
+      traffic_direction : "ingress"
+      destination_cidr_block : "0.0.0.0/0"
+      source_cidr_block : "0.0.0.0/0"
+      protocol : 1
+
+    http: 
+      rule_action : "accept"
+      rule_number : 200
+      traffic_direction : "ingress"
+      destination_cidr_block : "0.0.0.0/0"
+      source_cidr_block : "0.0.0.0/0"
+      protocol : 6 
+
+  egress_rules:
+    http:
+      rule_action : "accept"
+      rule_number : 100
+      traffic_direction : "egress"
+      destination_cidr_block : "0.0.0.0/0"
+      source_cidr_block : "0.0.0.0/0"
+      protocol : 6
