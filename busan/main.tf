@@ -1,3 +1,21 @@
+terraform {
+  required_version = ">= 1.3.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
+}
+
 locals {
   value1           = "test1"
   config           = yamldecode(file("./data.yml"))
@@ -36,14 +54,14 @@ module "security_group" {
   source  = "../modules/security_group"
   sg_list = local.config.sg_list
   vpc_id  = module.vpc.vpc_id
-}
+} 
 
 module "keypair" {
   source = "../modules/keypair"
 
   key_info    = local.config.key_info
   region_name = local.config.region_name
-}
+} 
 
 module "launch_template" {
   source = "../modules/launch_template"
@@ -63,38 +81,36 @@ module "ec2" {
   ec2_instances      = local.config.ec2_instances
 }
 
-module "as" {
-  source = "../modules/as"
+# module "as" {
+#   source = "../modules/as"
 
-  public_subnet_ids   = module.vpc.public_subnet_ids
-  autoscaling_policy  = local.config.autoscaling_policy
-  autoscaling_group   = local.config.autoscaling_group
-  launch_template_ids = module.launch_template.launch_template_ids
-  id_dvwa             = module.launch_template.launch_template_ids["dvwa-filebeat"]
-}
-
+#   public_subnet_ids   = module.vpc.public_subnet_ids
+#   autoscaling_policy  = local.config.autoscaling_policy
+#   autoscaling_group   = local.config.autoscaling_group
+#   launch_template_ids = module.launch_template.launch_template_ids
+#   id_dvwa             = module.launch_template.launch_template_ids["dvwa-filebeat"]
+# }  
+ 
 module "rds" {
   source = "../modules/rds"
-  count  = contains(keys(local.config), "db_instance") && contains(keys(local.config), "rds_subnet_group") ? 1 : 0
 
   sg_ids           = module.security_group.sg_ids
-  db_instance      = try(local.config.db_instance, null)
-  rds_subnet_group = try(local.config.rds_subnet_group, null)
+  db_instance      = local.config.db_instance
+  rds_subnet_group = local.config.rds_subnet_group
   subnet_ids       = module.vpc.private_subnet_ids
-}
+}  
 
 resource "local_file" "keypa1r" {
   content              = module.keypair.private_key
   filename             = "./id_ed25519"
   file_permission      = "0600"
   directory_permission = "0700"
-}
+} 
 
 resource "aws_route53_record" "dvwa" {
-  count   = length(module.rds) > 0 ? 1 : 0
   zone_id = "Z032662211JM2TEXY5ZXL"
   name    = "db.f1.it-edu.org"
   type    = "CNAME"
-  records = [module.rds[0].rds]
+  records = [ module.rds.rds ]
   ttl     = 60
-}
+} 
