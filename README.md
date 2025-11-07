@@ -1,99 +1,81 @@
 # terraform-aws-dvwa-automation
 
-Terraform 기반으로 DVWA(Web), RDS, ELK 등 학습/데모용 인프라를 자동화 배포하는 코드베이스입니다. 서울(`seoul`)과 부산(`busan`) 두 지역 구성을 제공하며, 부산은 서울 구성의 일부를 선택적으로 활용하도록 설계되어 있습니다.
+IaC(Terraform)로 서울(ap-northeast-2)과 부산 환경을 구성해 DVWA/Elasticsearch/Kibana/RDS 등을 자동화합니다. 각 환경은 독립 실행 디렉터리(seoul, busan)로 분리되어 있으며 공통 모듈은 `modules/`에 있습니다.
 
-특징
-- 지역별 분리: `seoul/`, `busan/` 각각 독립적으로 `terraform init/plan/apply` 가능
-- 모듈화 구조: `modules/` 하위에 VPC, Security Group, Launch Template, Auto Scaling, RDS 등 공통 모듈 제공
-- 선택적 리소스 생성: 지역별 데이터에 없거나 필요 없는 경우 리소스가 생성되지 않도록 조건부 로직 적용
-- 데이터 주도 구성: 각 지역의 `data.yml` 하나로 모든 설정을 관리합니다. 별도의 `.tfvars`나 `variables.tf`를 사용하지 않습니다.
+## 구성 및 버전
+- Terraform Core: >= 1.3 (권장: 1.13.x)
+- Providers:
+  - hashicorp/aws ~> 5.x
+  - hashicorp/tls ~> 4.x (키페어 생성)
+  - hashicorp/local ~> 2.x (로컬 파일 출력)
+- 상태 저장: 각 스택 디렉터리 내 로컬 상태(`terraform.tfstate`)
 
-폴더 구성
-```
-seoul/
-  main.tf            # 서울 리전 전체 스택
-  data.yml           # 서울 리전 구성 데이터(유일한 입력)
+## 디렉터리 구조
+- `seoul/`: 서울 스택. VPC, SG, Key Pair, Launch Template, EC2, ASG, RDS, 트래픽 미러 등 포함
+- `busan/`: 부산 스택. 서울과 유사하나 입력값/활성 리소스 다름
+- `modules/`: 재사용 모듈 모음
+  - `vpc/`: VPC, 서브넷, IGW, NAT, 라우팅
+  - `security_group/`: SG를 맵 형태 입력으로 일괄 생성
+  - `keypair/`: tls provider로 키 생성, AWS Key Pair와 로컬 개인키 파일 출력
+  - `launch_template/`: EC2 Launch Template 집합 생성
+  - `ec2/`: public/private EC2 인스턴스 및 Route53 레코드
+  - `as/`: Auto Scaling Group과 TargetTracking Policy
+  - `rds/`: Subnet Group, DB Instance(스냅샷 복구 옵션 포함)
 
-busan/
-  main.tf            # 부산 리전 스택 (선택적 RDS/ASG 등)
-  data.yml           # 부산 리전 구성 데이터(유일한 입력)
+참고: 과거 단일 EC2 예시 스택이었던 `elasticsearch/`는 현재 레포에서 제거되었습니다(필요 시 별도 브랜치/디렉터리로 복원하여 사용하세요).
 
-modules/
-  vpc/               # VPC, 서브넷, 라우팅, NAT 등
-  security_group/    # SG 동적 생성 (ingress/egress 맵 기반)
-  keypair/           # 키페어 생성 및 Private Key 출력
-  launch_template/   # 여러 개 LT 생성 (for_each), ID/버전 출력
-  as/                # 여러 ASG + Target Tracking Policy (조건부 생성)
-  rds/               # RDS Subnet Group + RDS Instance + 출력
-```
+## 수동 VPC Peering 명시(중요)
+- 서울 VPC ↔ 부산 VPC 간 VPC Peering은 Terraform 외부에서 “수동”으로 생성/연결/라우팅 설정했습니다.
+  - Peering 연결 생성 및 승인
+  - 각 VPC 라우트테이블에 상대 CIDR로의 경로 추가
+  - SG/NACL 통신 허용 규칙 검토
+- 위 작업은 Terraform 상태에 포함되지 않으므로, 드리프트 관리/문서화가 필요합니다.
 
-동작 개요
-- VPC: 퍼블릭/프라이빗 서브넷과 IGW/NAT, AZ 분산 지원
-- SG: `data.yml`의 규칙 맵을 기반으로 동적 인바운드/아웃바운드 생성
-- Launch Template: 태그 기반 이름 키로 여러 템플릿 생성, ASG에서 참조
-- ASG: `gnuboard`, `dvwa-filebeat`, `elasticsearch1/2` 등 구성. 지역 데이터에 없거나 ID 미지정 시 생성 생략
-- RDS: 수동 스냅샷을 우선 사용하도록 옵션 제공(`latest_snapshot` 플래그)
-- 보조 리소스: Route53 레코드, Local 파일(Private Key) 등
+## 사용 방법
+각 스택 디렉터리에서 독립적으로 초기화/계획/적용합니다.
 
-지역별 차이
-- 서울(`seoul`): 모든 컴포넌트(ASG 4종, RDS, Kibana/Suricata 등) 활성 예제 포함
-- 부산(`busan`): 경량 구성. `data.yml`에 정의되지 않은 RDS/ASG는 생성하지 않도록 조건부 처리
-  - 예) RDS 관련 키(`db_instance`, `rds_subnet_group`)가 없으면 모듈과 레코드 생략
-  - 예) ASG의 Launch Template ID가 없거나 그룹 키가 없으면 해당 ASG/정책 생략
-
-준비물
-- Terraform v1.6+ (권장)
-- AWS 자격 증명(프로파일 또는 환경변수)
-- 구성 입력은 오직 `data.yml`입니다. `.tfvars` 및 `variables.tf`는 사용하지 않습니다.
-- 사용 AMI/ARN/리소스 ID가 실제 계정/리전에 존재해야 함
-  - 예) IAM Instance Profile ARN, Route53 Hosted Zone ID, EBS Volume ID 등은 계정/리전 별로 상이 → 필요 시 변수화 권장
-
-써보기
-아래는 서울 리전 예시입니다.
-
+### 1) seoul
+- 설정: `seoul/data.yml`
+- 실행:
 ```bash
-# (선택) 백엔드 비활성화로 로컬 검증만
 cd seoul
-terraform init -backend=false -input=false
+terraform init -upgrade
 terraform validate
-
-# 실제 배포(백엔드 사용 시 백엔드 설정 필요)
-terraform init
 terraform plan
 terraform apply
 ```
 
-부산 리전도 동일합니다.
+### 2) busan
+- 설정: `busan/data.yml`
+- 실행은 `seoul`과 동일합니다.
 
-```bash
-cd busan
-terraform init -backend=false -input=false
-terraform validate
+## 모듈 입력/출력 개요(발췌)
+- `modules/vpc`
+  - 입력: `region`, `region_name`, `az_list`, `number_of_azs`, `cidr_block`, `subnet_bits`, `number_of_public_subnets`, `number_of_private_subnets`, `number_of_nat_gws`
+  - 출력: `vpc_id`, `public_subnet_ids`, `private_subnet_ids`
+- `modules/security_group`
+  - 입력: `sg_list(map)`, `vpc_id`
+  - 출력: SG ID 맵
+- `modules/keypair`
+  - 입력: `key_info(algorithm, rsa_bits)`, `region_name`
+  - 출력: `private_key`(로컬 파일 저장), `key_name`
+- `modules/launch_template`
+  - 입력: `launch_template(map)`, `sg_ids`
+  - 출력: `launch_template_ids(map)`
+- `modules/ec2`
+  - 입력: `region_name`, `public/private_subnet_ids`, `sg_ids`, `key_name`, `ec2_instances(map)`
+  - 출력: 퍼블릭 인스턴스 IP 기반의 Route53 레코드 등
+- `modules/as`
+  - 입력: `public_subnet_ids`, `autoscaling_group(map)`, `autoscaling_policy`, `launch_template_ids`, 특정 템플릿 id들(`id_gnuboard`, `id_dvwa`, `id_elasticsearch1`, `id_elasticsearch2`)
+- `modules/rds`
+  - 입력: `sg_ids`, `db_instance`, `rds_subnet_group`, `subnet_ids`
+  - 특징: 최신 수동 스냅샷 복구 옵션 지원
 
-terraform init
-terraform plan
-terraform apply
-```
+## 주의사항
+- 민감정보(개인키 등)는 커밋 금지. `.gitignore`로 제외하세요.
+- 로컬 상태 사용으로 협업 충돌 위험이 있으니, S3+DynamoDB 백엔드 전환을 검토하세요.
+- AMI ID, Hosted Zone ID, IAM Profile ARN 등은 환경에 맞게 변경해야 합니다.
+- 퍼블릭 서브넷 인덱스 참조(`[0]`, `[1]`)가 있는 ASG는 최소 2개의 퍼블릭 서브넷이 필요합니다.
 
-data.yml에서 자주 보는 키
-- `seoul/data.yml` / `busan/data.yml`
-  - `network`: CIDR, 서브넷 개수, NAT 수 등
-  - `sg_list`: 보안그룹 규칙 맵
-  - `launch_template`: LT별 AMI/타입/SG/유저데이터
-  - `autoscaling_group`, `autoscaling_policy`: 그룹별 용량/정책
-  - (선택) `rds_subnet_group`, `db_instance`: 정의 시에만 RDS 생성
-
-생성 후에 볼 수 있는 것
-- VPC ID, 퍼블릭/프라이빗 서브넷 ID 리스트
-- SG IDs 맵
-- Launch Template IDs/Default Versions
-- RDS 주소 (생성 시)
-
-주의할 점
-- 하드코딩 값(Hosted Zone ID, IAM Instance Profile ARN, EBS Volume ID 등)은 환경에 맞게 조정 필요. 변수화 추천
-- User Data 스크립트에서 AWS CLI 사용 시 AMI에 CLI가 설치되어 있어야 함 (또는 설치 단계 추가)
-- 특정 ASG 리소스는 퍼블릭 서브넷 인덱스 접근(예: `[0]`, `[1]`)을 합니다. 최소 2개의 퍼블릭 서브넷이 존재해야 합니다.
-- `terraform destroy` 시 RDS 스냅샷 관련 정책(`skip_final_snapshot`)을 확인하고 데이터 유실 방지에 유의하십시오.
-
-라이선스/용도
-이 레포지토리는 학습/데모 목적의 예시 코드입니다. 기업/프로덕션 사용 시 보안/운영 정책에 맞춘 추가 검토가 필요합니다.
+---
+문의/개선 포인트는 이슈 또는 PR로 제안해 주세요.
